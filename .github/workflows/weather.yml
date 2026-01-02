@@ -1,0 +1,24 @@
+name: Hourly Weather Screenshot
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # 1時間ごとに実行
+  workflow_dispatch:      # 手動実行ボタンを表示
+
+jobs:
+  screenshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Use Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - name: Install dependencies
+        run: npm install puppeteer cloudinary
+      - name: Run script
+        run: node screenshot.js
+        env:
+          CLOUDINARY_NAME: ${{ secrets.CLOUDINARY_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
