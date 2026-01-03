@@ -20,49 +20,64 @@ cloudinary.config({
     await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 60000 });
     await page.setViewport({ width: 1000, height: 2000 });
 
-    // --- 撮影設定 ---
-    // 今日の天気（発表時刻を含む親要素を指定）
-    const todayTarget = await page.$('#yjw_pinpoint'); 
-    if (todayTarget) {
-      // 発表時刻から今日のテーブルまでを収めるため、少し高さを調整してスクショ
-      await todayTarget.screenshot({ 
-        path: 'weather_today.png',
-        clip: { x: 0, y: 0, width: 674, height: 321 } // 発表時刻を含めた上部エリア
-      });
-      const res = await cloudinary.uploader.upload('weather_today.png', {
-        public_id: 'weather_today',
-        overwrite: true,
-        invalidate: true
-      });
-      console.log(`weather_today 更新完了: ${res.secure_url}`);
+    // タイムスタンプ作成（おまじない用）
+    const ts = new Date().getTime();
+
+    // --- 撮影ターゲットの定義 ---
+    const targets = [
+      { 
+        id: '#yjw_pinpoint', 
+        name: 'weather_today', 
+        label: '今日の天気',
+        clip: { x: 0, y: 0, width: 900, height: 650 } // 発表時刻を含めるため広めに設定
+      },
+      { 
+        id: '#yjw_pinpoint_tomorrow', 
+        name: 'weather_tomorrow', 
+        label: '明日の天気' 
+      },
+      { 
+        id: '#yjw_week', 
+        name: 'weather_week', 
+        label: '週間天気' 
+      }
+    ];
+
+    console.log("=========================================");
+    
+    for (const target of targets) {
+      const element = await page.$(target.id);
+      if (element) {
+        const fileName = `${target.name}.png`;
+        
+        // スクショ実行
+        if (target.clip) {
+          await element.screenshot({ path: fileName, clip: target.clip });
+        } else {
+          await element.screenshot({ path: fileName });
+        }
+
+        // Cloudinaryへアップロード
+        const res = await cloudinary.uploader.upload(fileName, {
+          public_id: target.name,
+          overwrite: true,
+          invalidate: true,       // キャッシュを破棄
+          unique_filename: false,  // URLを固定
+          resource_type: 'image'
+        });
+
+        // Notionに貼るためのURLをログに表示
+        console.log(`${target.label} のURL:`);
+        console.log(`${res.secure_url}?v=${ts}`);
+        console.log("-----------------------------------------");
+      }
     }
 
-    // 明日の天気
-    const tomorrowTarget = await page.$('#yjw_pinpoint_tomorrow');
-    if (tomorrowTarget) {
-      await tomorrowTarget.screenshot({ path: 'weather_tomorrow.png' });
-      const res = await cloudinary.uploader.upload('weather_tomorrow.png', {
-        public_id: 'weather_tomorrow',
-        overwrite: true,
-        invalidate: true
-      });
-      console.log(`weather_tomorrow 更新完了: ${res.secure_url}`);
-    }
-
-    // 週間天気
-    const weekTarget = await page.$('#yjw_week');
-    if (weekTarget) {
-      await weekTarget.screenshot({ path: 'weather_week.png' });
-      const res = await cloudinary.uploader.upload('weather_week.png', {
-        public_id: 'weather_week',
-        overwrite: true,
-        invalidate: true
-      });
-      console.log(`weather_week 更新完了: ${res.secure_url}`);
-    }
+    console.log("すべての更新が完了しました。");
+    console.log("=========================================");
 
   } catch (error) {
-    console.error("エラー:", error);
+    console.error("エラーが発生しました:", error);
     process.exit(1);
   } finally {
     if (browser) await browser.close();
