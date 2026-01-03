@@ -18,7 +18,7 @@ cloudinary.config({
     const targetUrl = 'https://weather.yahoo.co.jp/weather/jp/41/8510/41425.html';
     
     await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 60000 });
-    await page.setViewport({ width: 1000, height: 2000 });
+    await page.setViewport({ width: 1000, height: 550 });
 
     // --- 撮影設定 ---
     // 今日の天気（発表時刻を含む親要素を指定）
