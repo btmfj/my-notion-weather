@@ -1,7 +1,6 @@
 const puppeteer = require('puppeteer');
 const cloudinary = require('cloudinary').v2;
 
-// GitHubのSecretsから設定を読み込み
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
@@ -11,52 +10,45 @@ cloudinary.config({
 (async () => {
   let browser;
   try {
-    // ブラウザの起動
     browser = await puppeteer.launch({ 
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
       headless: "new"
     });
     const page = await browser.newPage();
-    
-    // 佐賀県白石町のYahoo天気URL
     const targetUrl = 'https://weather.yahoo.co.jp/weather/jp/41/8510/41425.html';
     
-    // ページへ移動（読み込み完了まで待機）
-    await page.goto(targetUrl, { 
-      waitUntil: 'networkidle2',
-      timeout: 60000
-    });
+    await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+    await page.setViewport({ width: 1000, height: 2000 }); // 縦を長めに設定
 
-    // 画面のサイズ設定
-    await page.setViewport({ width: 1000, height: 1200 });
+    // --- 撮影ターゲットの設定 ---
+    const targets = [
+      { id: '#yjw_pinpoint_today', name: 'weather_today' },   // 今日の天気
+      { id: '#yjw_pinpoint_tomorrow', name: 'weather_tomorrow' }, // 明日の天気
+      { id: '#yjw_week', name: 'weather_week' }              // 週間天気
+    ];
 
-    // 天気情報のメイン部分（#main）を探す
-    const element = await page.$('#main'); 
-    if (element) {
-      await element.screenshot({ path: 'weather.png' });
-    } else {
-      // #mainが見つからない場合はページ全体を撮る
-      await page.screenshot({ path: 'weather.png' });
-    }
-
-    // Cloudinaryへアップロード（上書き & キャッシュ破棄設定）
-    const uploadResponse = await cloudinary.uploader.upload('weather.png', {
-      public_id: 'today_weather',
-      overwrite: true,
-      invalidate: true,
-      resource_type: 'image'
-    });
-
-    // --- ここが重要：ログに最新URLを出力する ---
     console.log("=========================================");
-    console.log("【成功】画像が更新されました");
-    console.log("Notionに貼る最新URLはこちらです：");
-    console.log(uploadResponse.secure_url);
+    for (const target of targets) {
+      const element = await page.$(target.id);
+      if (element) {
+        const fileName = `${target.name}.png`;
+        await element.screenshot({ path: fileName });
+
+        // Cloudinaryへアップロード
+        const res = await cloudinary.uploader.upload(fileName, {
+          public_id: target.name,
+          overwrite: true,
+          invalidate: true,
+          resource_type: 'image'
+        });
+        console.log(`${target.name} 更新完了: ${res.secure_url}`);
+      }
+    }
     console.log("=========================================");
 
   } catch (error) {
-    console.error("【エラー発生】:", error);
-    process.exit(1); // エラーをGitHubに通知
+    console.error("エラー:", error);
+    process.exit(1);
   } finally {
     if (browser) await browser.close();
   }
