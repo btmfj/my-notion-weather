@@ -18,33 +18,48 @@ cloudinary.config({
     const targetUrl = 'https://weather.yahoo.co.jp/weather/jp/41/8510/41425.html';
     
     await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 60000 });
-    await page.setViewport({ width: 1000, height: 2000 }); // 縦を長めに設定
+    await page.setViewport({ width: 1000, height: 2000 });
 
-    // --- 撮影ターゲットの設定 ---
-    const targets = [
-      { id: '#yjw_pinpoint_today', name: 'weather_today' },   // 今日の天気
-      { id: '#yjw_pinpoint_tomorrow', name: 'weather_tomorrow' }, // 明日の天気
-      { id: '#yjw_week', name: 'weather_week' }              // 週間天気
-    ];
-
-    console.log("=========================================");
-    for (const target of targets) {
-      const element = await page.$(target.id);
-      if (element) {
-        const fileName = `${target.name}.png`;
-        await element.screenshot({ path: fileName });
-
-        // Cloudinaryへアップロード
-        const res = await cloudinary.uploader.upload(fileName, {
-          public_id: target.name,
-          overwrite: true,
-          invalidate: true,
-          resource_type: 'image'
-        });
-        console.log(`${target.name} 更新完了: ${res.secure_url}`);
-      }
+    // --- 撮影設定 ---
+    // 今日の天気（発表時刻を含む親要素を指定）
+    const todayTarget = await page.$('#yjw_pinpoint'); 
+    if (todayTarget) {
+      // 発表時刻から今日のテーブルまでを収めるため、少し高さを調整してスクショ
+      await todayTarget.screenshot({ 
+        path: 'weather_today.png',
+        clip: { x: 0, y: 0, width: 900, height: 550 } // 発表時刻を含めた上部エリア
+      });
+      const res = await cloudinary.uploader.upload('weather_today.png', {
+        public_id: 'weather_today',
+        overwrite: true,
+        invalidate: true
+      });
+      console.log(`weather_today 更新完了: ${res.secure_url}`);
     }
-    console.log("=========================================");
+
+    // 明日の天気
+    const tomorrowTarget = await page.$('#yjw_pinpoint_tomorrow');
+    if (tomorrowTarget) {
+      await tomorrowTarget.screenshot({ path: 'weather_tomorrow.png' });
+      const res = await cloudinary.uploader.upload('weather_tomorrow.png', {
+        public_id: 'weather_tomorrow',
+        overwrite: true,
+        invalidate: true
+      });
+      console.log(`weather_tomorrow 更新完了: ${res.secure_url}`);
+    }
+
+    // 週間天気
+    const weekTarget = await page.$('#yjw_week');
+    if (weekTarget) {
+      await weekTarget.screenshot({ path: 'weather_week.png' });
+      const res = await cloudinary.uploader.upload('weather_week.png', {
+        public_id: 'weather_week',
+        overwrite: true,
+        invalidate: true
+      });
+      console.log(`weather_week 更新完了: ${res.secure_url}`);
+    }
 
   } catch (error) {
     console.error("エラー:", error);
