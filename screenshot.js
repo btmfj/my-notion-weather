@@ -29,7 +29,7 @@ cloudinary.config({
         id: '#yjw_pinpoint', 
         name: 'weather_today', 
         label: '今日の天気',
-        clip: { x: 0, y: 0, width: 674,  heigh:  320 } // 発表時刻を含めるため広めに設定
+        clip: { x: 0, y: 0, width: 674,  height:  320 } // 発表時刻を含めるため広めに設定
       },
       { 
         id: '#yjw_pinpoint_tomorrow', 
