@@ -30,14 +30,18 @@ cloudinary.config({
     await page.screenshot({ path: 'weather.png' });
   }
 
-  // Cloudinaryへアップロード
-  await cloudinary.uploader.upload('weather.png', {
+ // Cloudinaryへアップロード
+  const uploadResponse = await cloudinary.uploader.upload('weather.png', {
     public_id: 'today_weather',
     overwrite: true,
     invalidate: true,
     resource_type: 'image'
   });
 
+  // 最新のURL（バージョン番号付き）をログに出力
+  console.log("-----------------------------------------");
+  console.log("NOTIONに貼る最新URLはこちらです：");
+  console.log(uploadResponse.secure_url);
+  console.log("-----------------------------------------");
+
   await browser.close();
-  console.log("Success: Image uploaded to Cloudinary");
-})();
