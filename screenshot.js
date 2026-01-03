@@ -27,7 +27,7 @@ cloudinary.config({
       // 発表時刻から今日のテーブルまでを収めるため、少し高さを調整してスクショ
       await todayTarget.screenshot({ 
         path: 'weather_today.png',
-        clip: { x: 0, y: 0, width: 674, height: 320 } // 発表時刻を含めた上部エリア
+        clip: { x: 0, y: 0, width: 674, height: 321 } // 発表時刻を含めた上部エリア
       });
       const res = await cloudinary.uploader.upload('weather_today.png', {
         public_id: 'weather_today',
