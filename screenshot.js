@@ -18,7 +18,7 @@ cloudinary.config({
     const targetUrl = 'https://weather.yahoo.co.jp/weather/jp/41/8510/41425.html';
     
     await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 60000 });
-    await page.setViewport({ width: 1000, height: 550 });
+    await page.setViewport({ width: 1000, height: 2000 });
 
     // --- 撮影設定 ---
     // 今日の天気（発表時刻を含む親要素を指定）
@@ -27,7 +27,7 @@ cloudinary.config({
       // 発表時刻から今日のテーブルまでを収めるため、少し高さを調整してスクショ
       await todayTarget.screenshot({ 
         path: 'weather_today.png',
-        clip: { x: 0, y: 0, width: 900, height: 550 } // 発表時刻を含めた上部エリア
+        clip: { x: 0, y: 0, width: 700, height: 550 } // 発表時刻を含めた上部エリア
       });
       const res = await cloudinary.uploader.upload('weather_today.png', {
         public_id: 'weather_today',
