@@ -42,7 +42,7 @@ const pageId = process.env.NOTION_PAGE_ID;
     const newUrls = [];
 
     const targets = [
-      { id: '#yjw_pinpoint', name: 'weather_today', clip: { x: 0, y: 0, width: 674,  heigh:  320 } },
+      { id: '#yjw_pinpoint', name: 'weather_today', clip: { x: 0, y: 0, width: 674,  height:  320 } },
       { id: '#yjw_pinpoint_tomorrow', name: 'weather_tomorrow' },
       { id: '#yjw_week', name: 'weather_week' }
     ];
