@@ -1,21 +1,24 @@
 name: Weather Screenshot
 
 on:
-  workflow_dispatch: # 手動実行用
+  workflow_dispatch:
   schedule:
-    - cron: '0 * * * *' # 1時間おきに実行
+    - cron: '0 * * * *'
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v3
-
       - name: Use Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '20'
+
+      - name: Install Japanese Fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-noto-cjk
 
       - name: Install dependencies
         run: npm install
@@ -26,5 +29,5 @@ jobs:
           CLOUDINARY_NAME: ${{ secrets.CLOUDINARY_NAME }}
           CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
           CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
-          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}   # ← これが重要！
-          NOTION_PAGE_ID: ${{ secrets.NOTION_PAGE_ID }} # ← これが重要！
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_PAGE_ID: ${{ secrets.NOTION_PAGE_ID }}
