@@ -23,7 +23,11 @@ jobs:
 
       - name: Run script
         run: node screenshot.js
+- name: Run script
+        run: node screenshot.js
         env:
           CLOUDINARY_NAME: ${{ secrets.CLOUDINARY_NAME }}
           CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
           CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}   # ← これがあるかチェック！
+          NOTION_PAGE_ID: ${{ secrets.NOTION_PAGE_ID }} # ← これもあるかチェック！
