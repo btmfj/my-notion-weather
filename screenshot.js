@@ -29,22 +29,21 @@ const pageId = process.env.NOTION_PAGE_ID;
     const ts = new Date().getTime();
     const newUrls = [];
 
+    // --- ご指定のサイズでターゲットを設定 ---
     const targets = [
       { id: '#yjw_pinpoint', name: 'weather_today', width: 674, height: 320 },
-      { id: '#yjw_pinpoint_tomorrow', name: 'weather_tomorrow', width: 674, height: 320 }, // 明日も同じサイズに
-      { id: '#yjw_week', name: 'weather_week', width: 674, height: 450 } // 週間は少し長めに
+      { id: '#yjw_pinpoint_tomorrow', name: 'weather_tomorrow', width: 674, height: 279 },
+      { id: '#yjw_week', name: 'weather_week', width: 674, height: 263 }
     ];
 
     for (const target of targets) {
       const element = await page.$(target.id);
       if (element) {
         const fileName = `${target.name}.png`;
-        
-        // 要素の場所（座標）を特定する
         const rect = await element.boundingBox();
         
         if (rect) {
-          // 要素の左上(x, y)を基準に、指定したwidthとheightで「ページ全体から」切り抜く
+          // 指定されたサイズで厳密にスクリーンショットを撮る
           await page.screenshot({
             path: fileName,
             clip: {
@@ -78,7 +77,7 @@ const pageId = process.env.NOTION_PAGE_ID;
       console.log(`${i + 1} 枚目の画像を更新しました！`);
     }
 
-    console.log("すべての工程が完了しました！");
+    console.log("すべての工程が正常に完了しました！");
 
   } catch (error) {
     console.error("エラーが発生しました:", error);
