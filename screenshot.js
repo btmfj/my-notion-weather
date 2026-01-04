@@ -15,34 +15,31 @@ const pageId = process.env.NOTION_PAGE_ID;
 (async () => {
   let browser;
   try {
-    // 日本語環境を指定してブラウザ起動
     browser = await puppeteer.launch({ 
       args: [
         '--no-sandbox', 
         '--disable-setuid-sandbox',
-        '--lang=ja,en-US,en' // 言語設定を日本語優先に
+        '--lang=ja,en-US,en'
       ],
       headless: "new"
     });
     
     const page = await browser.newPage();
-    
-    // ブラウザのヘッダー情報でも日本語を要求
-    await page.setExtraHTTPHeaders({
-      'Accept-Language': 'ja-JP'
-    });
+    await page.setExtraHTTPHeaders({ 'Accept-Language': 'ja-JP' });
 
     const targetUrl = 'https://weather.yahoo.co.jp/weather/jp/41/8510/41425.html';
     
     console.log("天気予報ページへアクセス中...");
     await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 60000 });
-    await page.setViewport({ width: 1000, height: 2000 });
+    // ビューポートを少し広めに設定しておく（切り取りミスを防ぐため）
+    await page.setViewport({ width: 1200, height: 2000 });
 
     const ts = new Date().getTime();
     const newUrls = [];
 
+    // ターゲット設定（heigh -> height に修正済み）
     const targets = [
-      { id: '#yjw_pinpoint', name: 'weather_today', clip: { x: 0, y: 0, width: 674,  height:  320 } },
+      { id: '#yjw_pinpoint', name: 'weather_today', clip: { x: 0, y: 0, width: 674, height: 320 } },
       { id: '#yjw_pinpoint_tomorrow', name: 'weather_tomorrow' },
       { id: '#yjw_week', name: 'weather_week' }
     ];
@@ -52,6 +49,8 @@ const pageId = process.env.NOTION_PAGE_ID;
       const element = await page.$(target.id);
       if (element) {
         const fileName = `${target.name}.png`;
+        
+        // clip指定がある場合はその範囲で、ない場合は要素全体を撮影
         if (target.clip) {
           await element.screenshot({ path: fileName, clip: target.clip });
         } else {
