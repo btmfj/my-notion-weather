@@ -67,11 +67,10 @@ const pageId = process.env.NOTION_PAGE_ID;
 
     // 取得した画像URLを順番にNotionのブロックへ流し込む
     for (let i = 0; i < Math.min(imageBlocks.length, newUrls.length); i++) {
-      await notion.blocks.update({
+    await notion.blocks.update({
         block_id: imageBlocks[i].id,
         image: {
-          type: "external",
-          external: { url: newUrls[i] }
+          external: { url: newUrls[i] } // "type: external" を書かずに直接指定する
         }
       });
       console.log(`Notionの ${i + 1} 枚目の画像を更新しました！`);
