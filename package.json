@@ -1,0 +1,13 @@
+{
+  "name": "notion-weather-bot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "screenshot.js",
+  "dependencies": {
+    "@notionhq/client": "^2.2.15",
+    "cloudinary": "^1.41.0",
+    "puppeteer": "^21.5.0"
+  },
+  "author": "",
+  "license": "ISC"
+}
