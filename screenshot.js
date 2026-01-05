@@ -34,7 +34,6 @@ async function getAllImageBlocks(blockId) {
     });
     
     const page = await browser.newPage();
-    // PC版として認識させるための設定
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     await page.setExtraHTTPHeaders({ 'Accept-Language': 'ja-JP' });
     await page.setViewport({ width: 1400, height: 4000 });
@@ -62,34 +61,24 @@ async function getAllImageBlocks(blockId) {
         overwrite: true, invalidate: true
       });
       newUrls.push(res.secure_url);
-      console.log(`${target.name} アップロード完了`);
+      console.log(`${target.name} アップロード完了 (${Math.round(rect.width)}x${Math.round(rect.height)})`);
     }
 
-    // --- ステップ2: 10日間予報 ---
+    // --- ステップ2: 10日間予報 (市区町村トップページより) ---
     console.log("10日間予報を取得中...");
-    // 確実に要素が存在するURLへ移動
-    await page.goto('https://tenki.jp/forecast/9/44/8510/41425/10days.html', { waitUntil: 'networkidle2', timeout: 60000 });
+    // ご提案いただいた市区町村トップページURL
+    await page.goto('https://tenki.jp/forecast/9/44/8510/41425/', { waitUntil: 'networkidle2', timeout: 60000 });
     
-    // 複数のセレクタ候補を試す
-    const weekSelectors = ['.forecast-10days-divided-list', '#forecast-point-10days', '.ten-days-weather'];
-    let weekElement = null;
-    let usedSelector = "";
-
-    for (const sel of weekSelectors) {
-      try {
-        weekElement = await page.waitForSelector(sel, { timeout: 10000 });
-        if (weekElement) {
-          usedSelector = sel;
-          break;
-        }
-      } catch (e) {
-        continue;
-      }
-    }
+    // このページにおける10日間天気のセクションID
+    const weekSelector = '#forecast-point-10days'; 
+    await page.waitForSelector(weekSelector, { timeout: 20000 });
+    const weekElement = await page.$(weekSelector);
 
     if (weekElement) {
+      // 広告などが被らないようスクロールして待機
       await weekElement.scrollIntoView();
-      await new Promise(r => setTimeout(r, 2000)); // 描画を待つ
+      await new Promise(r => setTimeout(r, 2000));
+      
       const rect = await weekElement.boundingBox();
       await page.screenshot({ path: `weather_week.png`, clip: rect });
       const res = await cloudinary.uploader.upload(`weather_week.png`, {
@@ -97,14 +86,13 @@ async function getAllImageBlocks(blockId) {
         overwrite: true, invalidate: true
       });
       newUrls.push(res.secure_url);
-      console.log(`weather_week アップロード完了 (使用セレクタ: ${usedSelector})`);
-    } else {
-      console.error("10日間予報の要素がどのセレクタでも見つかりませんでした。");
+      console.log(`weather_week アップロード完了 (${Math.round(rect.width)}x${Math.round(rect.height)})`);
     }
 
     // --- ステップ3: Notionを更新 ---
     console.log("Notionの画像ブロックを探索中...");
     const allImageBlocks = await getAllImageBlocks(pageId);
+    console.log(`Notion上で見つかった画像ブロック数: ${allImageBlocks.length}`);
     
     for (let i = 0; i < Math.min(allImageBlocks.length, newUrls.length); i++) {
       const cacheBustedUrl = `${newUrls[i]}?t=${ts}`;
