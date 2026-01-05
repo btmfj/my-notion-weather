@@ -29,7 +29,7 @@ const pageId = process.env.NOTION_PAGE_ID;
     const ts = new Date().getTime();
     const newUrls = [];
 
-    // --- ご指定のサイズでターゲットを設定 ---
+    // --- ターゲット設定 ---
     const targets = [
       { id: '#yjw_pinpoint', name: 'weather_today', width: 674, height: 320 },
       { id: '#yjw_pinpoint_tomorrow', name: 'weather_tomorrow', width: 674, height: 279 },
@@ -43,7 +43,6 @@ const pageId = process.env.NOTION_PAGE_ID;
         const rect = await element.boundingBox();
         
         if (rect) {
-          // 指定されたサイズで厳密にスクリーンショットを撮る
           await page.screenshot({
             path: fileName,
             clip: {
@@ -54,27 +53,41 @@ const pageId = process.env.NOTION_PAGE_ID;
             }
           });
 
+          // Cloudinaryへアップロード
           const res = await cloudinary.uploader.upload(fileName, {
             public_id: `${target.name}_${ts}`,
             overwrite: true,
             invalidate: true
           });
           newUrls.push(res.secure_url);
-          console.log(`${target.name} をアップロードしました (${target.width}x${target.height})`);
+          console.log(`${target.name} をアップロード完了: ${res.secure_url}`);
         }
       }
     }
 
     console.log("Notionの画像を更新中...");
     const response = await notion.blocks.children.list({ block_id: pageId });
+    // ページ内の画像ブロックのみを抽出
     const imageBlocks = response.results.filter(block => block.type === 'image');
 
+    if (imageBlocks.length === 0) {
+      console.log("警告: Notionページ内に画像ブロックが見つかりませんでした。");
+    }
+
     for (let i = 0; i < Math.min(imageBlocks.length, newUrls.length); i++) {
+      // キャッシュ回避のためURL末尾にタイムスタンプを付与
+      const cacheBustedUrl = `${newUrls[i]}?t=${ts}`;
+      
       await notion.blocks.update({
         block_id: imageBlocks[i].id,
-        image: { external: { url: newUrls[i] } }
+        image: { 
+          external: { 
+            url: cacheBustedUrl 
+          } 
+        }
       });
-      console.log(`${i + 1} 枚目の画像を更新しました！`);
+      console.log(`${i + 1} 枚目のNotionブロックを更新しました。`);
+      console.log(`URL: ${cacheBustedUrl}`);
     }
 
     console.log("すべての工程が正常に完了しました！");
