@@ -35,8 +35,7 @@ async function getAllImageBlocks(blockId) {
     
     const page = await browser.newPage();
     await page.setExtraHTTPHeaders({ 'Accept-Language': 'ja-JP' });
-    // 24時までの横幅を確保するためビューポートを十分に広く設定
-    await page.setViewport({ width: 1600, height: 4000 });
+    await page.setViewport({ width: 1400, height: 4000 });
 
     const targetUrl = 'https://tenki.jp/forecast/9/44/8510/41425/1hour.html';
     await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 60000 });
@@ -44,28 +43,30 @@ async function getAllImageBlocks(blockId) {
     const ts = new Date().getTime();
     const newUrls = [];
 
-    // --- 修正されたターゲット設定 ---
+    // --- セレクタの最終調整 ---
     const targets = [
       { selector: '#forecast-point-1h-today', name: 'weather_today' },
       { selector: '#forecast-point-1h-tomorrow', name: 'weather_tomorrow' },
-      // 10日間天気：より上位のセクションIDを指定
-      { selector: '#forecast-point-10days', name: 'weather_week' }
+      // 10日間天気は、このクラス名で取得するのが最も確実です
+      { selector: '.forecast-10days-divided-list', name: 'weather_week' }
     ];
 
     for (const target of targets) {
       try {
-        await page.waitForSelector(target.selector, { timeout: 15000 });
-        
-        // 要素までスクロールして確実に描画させる
+        // 確実に要素が出るまで待ち、少し余裕を持って待機（2秒）
+        await page.waitForSelector(target.selector, { timeout: 20000 });
         const element = await page.$(target.selector);
-        await element.scrollIntoView();
-
+        
         if (element) {
+          // 要素までスクロール
+          await element.scrollIntoView();
+          // スクロール後の描画待ち
+          await new Promise(resolve => setTimeout(resolve, 1000));
+
           const fileName = `${target.name}.png`;
           const rect = await element.boundingBox();
           
           if (rect) {
-            // 固定値を使わず、要素の実際のサイズ(rect)で丸ごと撮影
             await page.screenshot({
               path: fileName,
               clip: {
@@ -82,17 +83,18 @@ async function getAllImageBlocks(blockId) {
               invalidate: true
             });
             newUrls.push(res.secure_url);
-            console.log(`${target.name} アップロード完了 (サイズ: ${Math.round(rect.width)}x${Math.round(rect.height)})`);
+            console.log(`${target.name} アップロード完了 (${Math.round(rect.width)}x${Math.round(rect.height)})`);
           }
         }
       } catch (e) {
-        console.warn(`警告: ${target.selector} の取得に失敗しました。`);
+        console.warn(`警告: ${target.selector} の取得に失敗しました。詳細: ${e.message}`);
       }
     }
 
     console.log("Notionの画像ブロックを探索中...");
     const allImageBlocks = await getAllImageBlocks(pageId);
-    
+    console.log(`Notion上の画像ブロック数: ${allImageBlocks.length}`);
+
     for (let i = 0; i < Math.min(allImageBlocks.length, newUrls.length); i++) {
       const cacheBustedUrl = `${newUrls[i]}?t=${ts}`;
       await notion.blocks.update({
