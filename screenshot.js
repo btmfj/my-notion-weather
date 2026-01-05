@@ -34,6 +34,7 @@ async function getAllImageBlocks(blockId) {
     });
     
     const page = await browser.newPage();
+    // PC版Chromeとして振る舞う
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     await page.setExtraHTTPHeaders({ 'Accept-Language': 'ja-JP' });
     await page.setViewport({ width: 1400, height: 4000 });
@@ -41,7 +42,7 @@ async function getAllImageBlocks(blockId) {
     const ts = new Date().getTime();
     const newUrls = [];
 
-    // --- ステップ1: 今日・明日の予報 (1時間おき) ---
+    // --- ステップ1: 今日・明日の予報 ---
     console.log("今日・明日の予報を取得中...");
     await page.goto('https://tenki.jp/forecast/9/44/8510/41425/1hour.html', { waitUntil: 'networkidle2', timeout: 60000 });
     
@@ -53,6 +54,8 @@ async function getAllImageBlocks(blockId) {
     for (const target of dailyTargets) {
       await page.waitForSelector(target.selector, { timeout: 20000 });
       const element = await page.$(target.selector);
+      // アイコン画像などが読み込まれるのを少し待つ
+      await new Promise(r => setTimeout(r, 2000));
       const rect = await element.boundingBox();
       await page.screenshot({ path: `${target.name}.png`, clip: rect });
       
@@ -61,23 +64,22 @@ async function getAllImageBlocks(blockId) {
         overwrite: true, invalidate: true
       });
       newUrls.push(res.secure_url);
-      console.log(`${target.name} アップロード完了 (${Math.round(rect.width)}x${Math.round(rect.height)})`);
+      console.log(`${target.name} アップロード完了`);
     }
 
-    // --- ステップ2: 10日間予報 (市区町村トップページより) ---
+    // --- ステップ2: 10日間予報 (IDを修正) ---
     console.log("10日間予報を取得中...");
-    // ご提案いただいた市区町村トップページURL
     await page.goto('https://tenki.jp/forecast/9/44/8510/41425/', { waitUntil: 'networkidle2', timeout: 60000 });
     
-    // このページにおける10日間天気のセクションID
-    const weekSelector = '#forecast-point-10days'; 
+    // PC版での10日間天気の正しいID: #forecast-point-weekly
+    const weekSelector = '#forecast-point-weekly'; 
     await page.waitForSelector(weekSelector, { timeout: 20000 });
     const weekElement = await page.$(weekSelector);
 
     if (weekElement) {
-      // 広告などが被らないようスクロールして待機
       await weekElement.scrollIntoView();
-      await new Promise(r => setTimeout(r, 2000));
+      // 広告の読み込み待ちと画像描画待ち
+      await new Promise(r => setTimeout(r, 3000));
       
       const rect = await weekElement.boundingBox();
       await page.screenshot({ path: `weather_week.png`, clip: rect });
@@ -86,13 +88,12 @@ async function getAllImageBlocks(blockId) {
         overwrite: true, invalidate: true
       });
       newUrls.push(res.secure_url);
-      console.log(`weather_week アップロード完了 (${Math.round(rect.width)}x${Math.round(rect.height)})`);
+      console.log(`weather_week アップロード完了`);
     }
 
     // --- ステップ3: Notionを更新 ---
     console.log("Notionの画像ブロックを探索中...");
     const allImageBlocks = await getAllImageBlocks(pageId);
-    console.log(`Notion上で見つかった画像ブロック数: ${allImageBlocks.length}`);
     
     for (let i = 0; i < Math.min(allImageBlocks.length, newUrls.length); i++) {
       const cacheBustedUrl = `${newUrls[i]}?t=${ts}`;
