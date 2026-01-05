@@ -11,6 +11,23 @@ cloudinary.config({
 const notion = new Client({ auth: process.env.NOTION_TOKEN });
 const pageId = process.env.NOTION_PAGE_ID;
 
+// --- ページ内の全階層から画像ブロックを探す関数 ---
+async function getAllImageBlocks(blockId) {
+  let results = [];
+  const response = await notion.blocks.children.list({ block_id: blockId });
+  
+  for (const block of response.results) {
+    if (block.type === 'image') {
+      results.push(block);
+    } else if (block.has_children) {
+      // 子要素がある場合（列、トグル、コールアウト等）、さらに深く探す
+      const childImages = await getAllImageBlocks(block.id);
+      results = results.concat(childImages);
+    }
+  }
+  return results;
+}
+
 (async () => {
   let browser;
   try {
@@ -29,7 +46,6 @@ const pageId = process.env.NOTION_PAGE_ID;
     const ts = new Date().getTime();
     const newUrls = [];
 
-    // --- ターゲット設定 ---
     const targets = [
       { id: '#yjw_pinpoint', name: 'weather_today', width: 674, height: 320 },
       { id: '#yjw_pinpoint_tomorrow', name: 'weather_tomorrow', width: 674, height: 279 },
@@ -41,53 +57,33 @@ const pageId = process.env.NOTION_PAGE_ID;
       if (element) {
         const fileName = `${target.name}.png`;
         const rect = await element.boundingBox();
-        
         if (rect) {
           await page.screenshot({
             path: fileName,
-            clip: {
-              x: rect.x,
-              y: rect.y,
-              width: target.width,
-              height: target.height
-            }
+            clip: { x: rect.x, y: rect.y, width: target.width, height: target.height }
           });
-
-          // Cloudinaryへアップロード
           const res = await cloudinary.uploader.upload(fileName, {
             public_id: `${target.name}_${ts}`,
             overwrite: true,
             invalidate: true
           });
           newUrls.push(res.secure_url);
-          console.log(`${target.name} をアップロード完了: ${res.secure_url}`);
+          console.log(`${target.name} アップロード完了`);
         }
       }
     }
 
-    console.log("Notionの画像を更新中...");
-    const response = await notion.blocks.children.list({ block_id: pageId });
-    // ページ内の画像ブロックのみを抽出
-    const imageBlocks = response.results.filter(block => block.type === 'image');
+    console.log("Notionの画像ブロックを全階層から探索中...");
+    const allImageBlocks = await getAllImageBlocks(pageId);
+    console.log(`見つかった画像ブロック数: ${allImageBlocks.length}`);
 
-    if (imageBlocks.length === 0) {
-      console.log("警告: Notionページ内に画像ブロックが見つかりませんでした。");
-    }
-
-    for (let i = 0; i < Math.min(imageBlocks.length, newUrls.length); i++) {
-      // キャッシュ回避のためURL末尾にタイムスタンプを付与
+    for (let i = 0; i < Math.min(allImageBlocks.length, newUrls.length); i++) {
       const cacheBustedUrl = `${newUrls[i]}?t=${ts}`;
-      
       await notion.blocks.update({
-        block_id: imageBlocks[i].id,
-        image: { 
-          external: { 
-            url: cacheBustedUrl 
-          } 
-        }
+        block_id: allImageBlocks[i].id,
+        image: { external: { url: cacheBustedUrl } }
       });
-      console.log(`${i + 1} 枚目のNotionブロックを更新しました。`);
-      console.log(`URL: ${cacheBustedUrl}`);
+      console.log(`${i + 1} 枚目の画像ブロック（ID: ${allImageBlocks[i].id}）を更新しました。`);
     }
 
     console.log("すべての工程が正常に完了しました！");
