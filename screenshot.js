@@ -35,52 +35,55 @@ async function getAllImageBlocks(blockId) {
     
     const page = await browser.newPage();
     await page.setExtraHTTPHeaders({ 'Accept-Language': 'ja-JP' });
-    // tenki.jpは表が横に長いため、少し広めのビューポートに設定
-    await page.setViewport({ width: 1400, height: 3000 });
+    // 画面幅を少し広めに設定
+    await page.setViewport({ width: 1200, height: 3000 });
 
-    // 10日間天気まで含まれるURLへ移動
-    const targetUrl = 'https://tenki.jp/forecast/9/44/8510/41425/10days.html';
+    // 1時間予報のページ。ここから今日・明日・10日間（下部）を取得します。
+    const targetUrl = 'https://tenki.jp/forecast/9/44/8510/41425/1hour.html';
     await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 60000 });
 
     const ts = new Date().getTime();
     const newUrls = [];
 
-    // --- tenki.jp 用のターゲット設定 ---
-    // 今日・明日は 1hour-entry クラス、10日間は ten-days-section 内の表を取得
+    // --- セレクタを修正 ---
     const targets = [
       { selector: '#forecast-point-1h-today', name: 'weather_today', width: 800, height: 450 },
       { selector: '#forecast-point-1h-tomorrow', name: 'weather_tomorrow', width: 800, height: 450 },
-      { selector: '.ten-days-weather', name: 'weather_week', width: 800, height: 560 }
+      { selector: '.forecast-10days-divided-list', name: 'weather_week', width: 800, height: 600 }
     ];
 
     for (const target of targets) {
-      // 要素が現れるまで待機
-      await page.waitForSelector(target.selector);
-      const element = await page.$(target.selector);
-      
-      if (element) {
-        const fileName = `${target.name}.png`;
-        const rect = await element.boundingBox();
+      // 要素が見つかるまで待機（最大15秒に短縮してエラーを早く察知）
+      try {
+        await page.waitForSelector(target.selector, { timeout: 15000 });
+        const element = await page.$(target.selector);
         
-        if (rect) {
-          await page.screenshot({
-            path: fileName,
-            clip: {
-              x: rect.x,
-              y: rect.y,
-              width: target.width || rect.width,
-              height: target.height || rect.height
-            }
-          });
+        if (element) {
+          const fileName = `${target.name}.png`;
+          const rect = await element.boundingBox();
+          
+          if (rect) {
+            await page.screenshot({
+              path: fileName,
+              clip: {
+                x: rect.x,
+                y: rect.y,
+                width: target.width || rect.width,
+                height: target.height || rect.height
+              }
+            });
 
-          const res = await cloudinary.uploader.upload(fileName, {
-            public_id: `${target.name}_${ts}`,
-            overwrite: true,
-            invalidate: true
-          });
-          newUrls.push(res.secure_url);
-          console.log(`${target.name} アップロード完了: ${res.secure_url}`);
+            const res = await cloudinary.uploader.upload(fileName, {
+              public_id: `${target.name}_${ts}`,
+              overwrite: true,
+              invalidate: true
+            });
+            newUrls.push(res.secure_url);
+            console.log(`${target.name} アップロード完了`);
+          }
         }
+      } catch (e) {
+        console.warn(`警告: セレクタ ${target.selector} が見つかりませんでした。スキップします。`);
       }
     }
 
