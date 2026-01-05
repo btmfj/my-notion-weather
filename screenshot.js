@@ -37,64 +37,54 @@ async function getAllImageBlocks(blockId) {
     await page.setExtraHTTPHeaders({ 'Accept-Language': 'ja-JP' });
     await page.setViewport({ width: 1400, height: 4000 });
 
-    const targetUrl = 'https://tenki.jp/forecast/9/44/8510/41425/1hour.html';
-    await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 60000 });
-
     const ts = new Date().getTime();
     const newUrls = [];
 
-    // --- セレクタの最終調整 ---
-    const targets = [
+    // --- ステップ1: 今日・明日の予報を取得 ---
+    console.log("今日・明日の予報を取得中...");
+    await page.goto('https://tenki.jp/forecast/9/44/8510/41425/1hour.html', { waitUntil: 'networkidle2' });
+    
+    const dailyTargets = [
       { selector: '#forecast-point-1h-today', name: 'weather_today' },
-      { selector: '#forecast-point-1h-tomorrow', name: 'weather_tomorrow' },
-      // 10日間天気は、このクラス名で取得するのが最も確実です
-      { selector: '.forecast-10days-divided-list', name: 'weather_week' }
+      { selector: '#forecast-point-1h-tomorrow', name: 'weather_tomorrow' }
     ];
 
-    for (const target of targets) {
-      try {
-        // 確実に要素が出るまで待ち、少し余裕を持って待機（2秒）
-        await page.waitForSelector(target.selector, { timeout: 20000 });
-        const element = await page.$(target.selector);
-        
-        if (element) {
-          // 要素までスクロール
-          await element.scrollIntoView();
-          // スクロール後の描画待ち
-          await new Promise(resolve => setTimeout(resolve, 1000));
-
-          const fileName = `${target.name}.png`;
-          const rect = await element.boundingBox();
-          
-          if (rect) {
-            await page.screenshot({
-              path: fileName,
-              clip: {
-                x: rect.x,
-                y: rect.y,
-                width: rect.width,
-                height: rect.height
-              }
-            });
-
-            const res = await cloudinary.uploader.upload(fileName, {
-              public_id: `${target.name}_${ts}`,
-              overwrite: true,
-              invalidate: true
-            });
-            newUrls.push(res.secure_url);
-            console.log(`${target.name} アップロード完了 (${Math.round(rect.width)}x${Math.round(rect.height)})`);
-          }
-        }
-      } catch (e) {
-        console.warn(`警告: ${target.selector} の取得に失敗しました。詳細: ${e.message}`);
-      }
+    for (const target of dailyTargets) {
+      await page.waitForSelector(target.selector, { timeout: 15000 });
+      const element = await page.$(target.selector);
+      const rect = await element.boundingBox();
+      await page.screenshot({ path: `${target.name}.png`, clip: rect });
+      
+      const res = await cloudinary.uploader.upload(`${target.name}.png`, {
+        public_id: `${target.name}_${ts}`,
+        overwrite: true, invalidate: true
+      });
+      newUrls.push(res.secure_url);
+      console.log(`${target.name} アップロード完了`);
     }
 
+    // --- ステップ2: 10日間予報の専用ページへ移動して取得 ---
+    console.log("10日間予報を取得中...");
+    await page.goto('https://tenki.jp/forecast/9/44/8510/41425/10days.html', { waitUntil: 'networkidle2' });
+    
+    // 10日間天気ページのメイン表のセレクタ
+    const weekSelector = '.forecast-10days-divided-list'; 
+    await page.waitForSelector(weekSelector, { timeout: 15000 });
+    const weekElement = await page.$(weekSelector);
+    const weekRect = await weekElement.boundingBox();
+    
+    await page.screenshot({ path: `weather_week.png`, clip: weekRect });
+    const weekRes = await cloudinary.uploader.upload(`weather_week.png`, {
+      public_id: `weather_week_${ts}`,
+      overwrite: true, invalidate: true
+    });
+    newUrls.push(weekRes.secure_url);
+    console.log(`weather_week アップロード完了`);
+
+    // --- ステップ3: Notionを更新 ---
     console.log("Notionの画像ブロックを探索中...");
     const allImageBlocks = await getAllImageBlocks(pageId);
-    console.log(`Notion上の画像ブロック数: ${allImageBlocks.length}`);
-
+    
     for (let i = 0; i < Math.min(allImageBlocks.length, newUrls.length); i++) {
       const cacheBustedUrl = `${newUrls[i]}?t=${ts}`;
       await notion.blocks.update({
