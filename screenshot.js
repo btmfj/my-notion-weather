@@ -35,41 +35,44 @@ async function getAllImageBlocks(blockId) {
     
     const page = await browser.newPage();
     await page.setExtraHTTPHeaders({ 'Accept-Language': 'ja-JP' });
-    // 画面幅を少し広めに設定
-    await page.setViewport({ width: 1200, height: 3000 });
+    // 24時までの横幅を確保するためビューポートを十分に広く設定
+    await page.setViewport({ width: 1600, height: 4000 });
 
-    // 1時間予報のページ。ここから今日・明日・10日間（下部）を取得します。
     const targetUrl = 'https://tenki.jp/forecast/9/44/8510/41425/1hour.html';
     await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 60000 });
 
     const ts = new Date().getTime();
     const newUrls = [];
 
-    // --- セレクタを修正 ---
+    // --- 修正されたターゲット設定 ---
     const targets = [
-      { selector: '#forecast-point-1h-today', name: 'weather_today', width: 800, height: 450 },
-      { selector: '#forecast-point-1h-tomorrow', name: 'weather_tomorrow', width: 800, height: 450 },
-      { selector: '.forecast-10days-divided-list', name: 'weather_week', width: 800, height: 600 }
+      { selector: '#forecast-point-1h-today', name: 'weather_today' },
+      { selector: '#forecast-point-1h-tomorrow', name: 'weather_tomorrow' },
+      // 10日間天気：より上位のセクションIDを指定
+      { selector: '#forecast-point-10days', name: 'weather_week' }
     ];
 
     for (const target of targets) {
-      // 要素が見つかるまで待機（最大15秒に短縮してエラーを早く察知）
       try {
         await page.waitForSelector(target.selector, { timeout: 15000 });
-        const element = await page.$(target.selector);
         
+        // 要素までスクロールして確実に描画させる
+        const element = await page.$(target.selector);
+        await element.scrollIntoView();
+
         if (element) {
           const fileName = `${target.name}.png`;
           const rect = await element.boundingBox();
           
           if (rect) {
+            // 固定値を使わず、要素の実際のサイズ(rect)で丸ごと撮影
             await page.screenshot({
               path: fileName,
               clip: {
                 x: rect.x,
                 y: rect.y,
-                width: target.width || rect.width,
-                height: target.height || rect.height
+                width: rect.width,
+                height: rect.height
               }
             });
 
@@ -79,11 +82,11 @@ async function getAllImageBlocks(blockId) {
               invalidate: true
             });
             newUrls.push(res.secure_url);
-            console.log(`${target.name} アップロード完了`);
+            console.log(`${target.name} アップロード完了 (サイズ: ${Math.round(rect.width)}x${Math.round(rect.height)})`);
           }
         }
       } catch (e) {
-        console.warn(`警告: セレクタ ${target.selector} が見つかりませんでした。スキップします。`);
+        console.warn(`警告: ${target.selector} の取得に失敗しました。`);
       }
     }
 
