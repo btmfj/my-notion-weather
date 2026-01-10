@@ -11,11 +11,9 @@ cloudinary.config({
 
 const notion = new Client({ auth: process.env.NOTION_TOKEN });
 const pageId = process.env.NOTION_PAGE_ID;
+const DATABASE_ID = '2e3131d5c283808b829cf71e65f8794c'; // 最新のDB ID
 
-// お送りいただいた最新のデータベースIDを反映
-const DATABASE_ID = '2e3131d5c283808b829cf71e65f8794c'; 
-
-// 再帰的に画像ブロックを取得する関数（ダッシュボード更新用）
+// ダッシュボード更新用
 async function getAllImageBlocks(blockId) {
   let results = [];
   const response = await notion.blocks.children.list({ block_id: blockId });
@@ -45,16 +43,19 @@ async function getAllImageBlocks(blockId) {
     const now = new Date();
     const ts = now.getTime();
     
-    // 日本時間の yyyy-mm-dd 形式を取得
-    const todayStr = new Intl.DateTimeFormat('ja-JP', {
+    // 日本時間での表記を作成
+    const jstDate = new Intl.DateTimeFormat('ja-JP', {
       year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Asia/Tokyo'
     }).format(now).replace(/\//g, '-');
     
-    const currentHour = now.getHours();
+    const jstTime = new Intl.DateTimeFormat('ja-JP', {
+      hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Tokyo'
+    }).format(now);
+
     const newUrls = [];
 
     // --- ステップ1: 今日・明日の予報取得 ---
-    console.log("今日・明日の予報を取得中...");
+    console.log("予報データを取得中...");
     await page.goto('https://tenki.jp/forecast/9/44/8510/41425/1hour.html', { waitUntil: 'networkidle2', timeout: 60000 });
     
     const dailyTargets = [
@@ -74,11 +75,9 @@ async function getAllImageBlocks(blockId) {
         invalidate: true 
       });
       newUrls.push(res.secure_url);
-      console.log(`${target.name} アップロード完了`);
     }
 
     // --- ステップ2: 10日間予報取得 ---
-    console.log("10日間予報を取得中...");
     await page.goto('https://tenki.jp/forecast/9/44/8510/41425/', { waitUntil: 'networkidle2', timeout: 60000 });
     const sectionElement = await page.evaluateHandle(() => {
       const headers = Array.from(document.querySelectorAll('h3, h2, .section-title'));
@@ -98,46 +97,42 @@ async function getAllImageBlocks(blockId) {
         invalidate: true 
       });
       newUrls.push(res.secure_url);
-      console.log(`weather_week アップロード完了`);
     }
 
-    // --- ステップ3: データベースへの蓄積 (0時台に実行) ---
-    if (currentHour === 0) {
-      console.log("0時台のため、データベースに本日の予報を蓄積します...");
-      await notion.pages.create({
-        parent: { database_id: DATABASE_ID },
-        properties: {
-          "タイトル": {
-            title: [{ text: { content: `${todayStr} の天気記録` } }]
-          },
-          "日付": {
-            date: { start: todayStr }
-          },
-          "ファイル&メディア": {
-            files: [
-              {
-                name: `${todayStr}_weather.png`,
-                type: "external",
-                external: { url: newUrls[0] }
-              }
-            ]
-          }
+    // --- ステップ3: データベースへの蓄積（検証用：毎回実行） ---
+    console.log(`データベースへレコードを追加します (${jstTime})...`);
+    await notion.pages.create({
+      parent: { database_id: DATABASE_ID },
+      properties: {
+        "タイトル": {
+          title: [{ text: { content: `${jstDate} ${jstTime} の予報` } }]
         },
-        children: [
-          {
-            object: 'block',
-            type: 'image',
-            image: { external: { url: newUrls[0] } }
-          }
-        ]
-      });
-      console.log("データベースへの記録が完了しました。");
-    }
+        "日付": {
+          date: { start: jstDate }
+        },
+        "ファイル&メディア": {
+          files: [
+            {
+              name: `${ts}_weather.png`,
+              type: "external",
+              external: { url: newUrls[0] }
+            }
+          ]
+        }
+      },
+      children: [
+        {
+          object: 'block',
+          type: 'image',
+          image: { external: { url: newUrls[0] } }
+        }
+      ]
+    });
+    console.log("データベースへの追加成功！");
 
-    // --- ステップ4: ダッシュボード（既存ページ）の更新 (毎時間実行) ---
-    console.log("ダッシュボードの画像ブロックを更新中...");
+    // --- ステップ4: ダッシュボード（既存ページ）の更新 ---
+    console.log("既存のダッシュボードを更新中...");
     const allImageBlocks = await getAllImageBlocks(pageId);
-    
     for (let i = 0; i < Math.min(allImageBlocks.length, newUrls.length); i++) {
       await notion.blocks.update({
         block_id: allImageBlocks[i].id,
