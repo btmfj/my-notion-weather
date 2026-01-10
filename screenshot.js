@@ -59,7 +59,7 @@ async function getAllImageBlocks(blockId) {
 
     const newUrls = [];
 
-    // --- ステップ1: 今日・明日の予報 ---
+    // --- ステップ1: 今日・明日の予報取得 ---
     console.log("予報データを取得中...");
     await page.goto('https://tenki.jp/forecast/9/44/8510/41425/1hour.html', { waitUntil: 'networkidle2', timeout: 60000 });
     
@@ -82,7 +82,7 @@ async function getAllImageBlocks(blockId) {
       newUrls.push(res.secure_url);
     }
 
-    // --- ステップ2: 10日間予報 ---
+    // --- ステップ2: 10日間予報取得 ---
     await page.goto('https://tenki.jp/forecast/9/44/8510/41425/', { waitUntil: 'networkidle2', timeout: 60000 });
     const sectionElement = await page.evaluateHandle(() => {
       const headers = Array.from(document.querySelectorAll('h3, h2, .section-title'));
@@ -104,8 +104,8 @@ async function getAllImageBlocks(blockId) {
       newUrls.push(res.secure_url);
     }
 
-    // --- ステップ3: データベースへの蓄積 (本文への挿入) ---
-    console.log(`データベースへ新規ページを作成中...`);
+    // --- ステップ3: データベースへの蓄積 (本文への貼り付け・検証のため毎回実行) ---
+    console.log(`データベースへ新規ページを作成し、本文に画像を貼り付けます...`);
     await notion.pages.create({
       parent: { database_id: DATABASE_ID },
       properties: {
@@ -114,18 +114,10 @@ async function getAllImageBlocks(blockId) {
         },
         "日付": {
           date: { start: jstDate }
-        },
-        "ファイル&メディア": {
-          files: [
-            {
-              name: `thumb_${ts}.png`,
-              type: "external",
-              external: { url: newUrls[0] }
-            }
-          ]
         }
+        // 「ファイル&メディア」カラムへの送信は削除しました
       },
-      // 【改善】ページの本文（children）に画像ブロックを置く
+      // ページの本文に画像を配置
       children: [
         {
           object: 'block',
@@ -148,8 +140,8 @@ async function getAllImageBlocks(blockId) {
       ]
     });
 
-    // --- ステップ4: ダッシュボード更新 ---
-    console.log("既存ダッシュボードを更新中...");
+    // --- ステップ4: ダッシュボード（既存ページ）の更新 (常に実行) ---
+    console.log("既存ダッシュボードの更新を開始...");
     const allImageBlocks = await getAllImageBlocks(pageId);
     for (let i = 0; i < Math.min(allImageBlocks.length, newUrls.length); i++) {
       await notion.blocks.update({
