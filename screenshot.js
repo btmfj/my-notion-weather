@@ -39,7 +39,7 @@ async function getAllImageBlocks(blockId) {
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     
-    // 高解像度設定
+    // 高解像度（Retina相当）設定
     await page.setViewport({ 
       width: 1400, 
       height: 5000,
@@ -49,14 +49,12 @@ async function getAllImageBlocks(blockId) {
     const now = new Date();
     const ts = now.getTime();
     
+    // 日本時間設定
     const jstDate = new Intl.DateTimeFormat('ja-JP', {
       year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Asia/Tokyo'
     }).format(now).replace(/\//g, '-');
     
-    const jstTime = new Intl.DateTimeFormat('ja-JP', {
-      hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Tokyo'
-    }).format(now);
-
+    const currentHour = now.getHours();
     const newUrls = [];
 
     // --- ステップ1: 今日・明日の予報取得 ---
@@ -104,44 +102,40 @@ async function getAllImageBlocks(blockId) {
       newUrls.push(res.secure_url);
     }
 
-    // --- ステップ3: データベースへの蓄積 (本文への貼り付け・検証のため毎回実行) ---
-    console.log(`データベースへ新規ページを作成し、本文に画像を貼り付けます...`);
-    await notion.pages.create({
-      parent: { database_id: DATABASE_ID },
-      properties: {
-        "タイトル": {
-          title: [{ text: { content: `${jstDate} ${jstTime} の記録` } }]
-        },
-        "日付": {
-          date: { start: jstDate }
-        }
-        // 「ファイル&メディア」カラムへの送信は削除しました
-      },
-      // ページの本文に画像を配置
-      children: [
-        {
-          object: 'block',
-          type: 'heading_2',
-          heading_2: { rich_text: [{ text: { content: "☀️ 今日の天気予報" } }] }
-        },
-        {
-          object: 'block',
-          type: 'image',
-          image: {
-            type: 'external',
-            external: { url: newUrls[0] }
+    // --- ステップ3: データベースへの蓄積 (0時台のみ実行) ---
+    if (currentHour === 0) {
+      console.log("0時台のため、データベースへ記録を作成します...");
+      await notion.pages.create({
+        parent: { database_id: DATABASE_ID },
+        properties: {
+          "タイトル": {
+            title: [{ text: { content: `${jstDate} の天気記録` } }]
+          },
+          "日付": {
+            date: { start: jstDate }
           }
         },
-        {
-          object: 'block',
-          type: 'paragraph',
-          paragraph: { rich_text: [{ text: { content: `取得時刻: ${jstTime}` } }] }
-        }
-      ]
-    });
+        children: [
+          {
+            object: 'block',
+            type: 'heading_2',
+            heading_2: { rich_text: [{ text: { content: "☀️ 本日の天気予報" } }] }
+          },
+          {
+            object: 'block',
+            type: 'image',
+            image: {
+              type: 'external',
+              external: { url: newUrls[0] }
+            }
+          }
+        ]
+      });
+      console.log("データベースへの保存が完了しました。");
+    }
 
     // --- ステップ4: ダッシュボード（既存ページ）の更新 (常に実行) ---
-    console.log("既存ダッシュボードの更新を開始...");
+    console.log("ダッシュボードを更新中...");
     const allImageBlocks = await getAllImageBlocks(pageId);
     for (let i = 0; i < Math.min(allImageBlocks.length, newUrls.length); i++) {
       await notion.blocks.update({
@@ -150,7 +144,7 @@ async function getAllImageBlocks(blockId) {
       });
     }
     
-    console.log("すべての工程が正常に完了しました！");
+    console.log("正常に完了しました！");
 
   } catch (error) {
     console.error("エラーが発生しました:", error);
