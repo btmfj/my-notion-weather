@@ -13,6 +13,7 @@ const notion = new Client({ auth: process.env.NOTION_TOKEN });
 const pageId = process.env.NOTION_PAGE_ID;
 const DATABASE_ID = '2e3131d5c28380efb35fca292b17b57f'; 
 
+// ダッシュボード更新用
 async function getAllImageBlocks(blockId) {
   let results = [];
   const response = await notion.blocks.children.list({ block_id: blockId });
@@ -38,7 +39,7 @@ async function getAllImageBlocks(blockId) {
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     
-    // 【画質改善】deviceScaleFactor: 2 を設定して高解像度（Retina相当）でキャプチャ
+    // 【高画質化】解像度を2倍に設定
     await page.setViewport({ 
       width: 1400, 
       height: 5000,
@@ -48,7 +49,6 @@ async function getAllImageBlocks(blockId) {
     const now = new Date();
     const ts = now.getTime();
     
-    // 日本時間での表記
     const jstDate = new Intl.DateTimeFormat('ja-JP', {
       year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Asia/Tokyo'
     }).format(now).replace(/\//g, '-');
@@ -60,7 +60,7 @@ async function getAllImageBlocks(blockId) {
     const newUrls = [];
 
     // --- ステップ1: 今日・明日の予報 ---
-    console.log("予報データを高画質で取得中...");
+    console.log("高画質でデータを取得中...");
     await page.goto('https://tenki.jp/forecast/9/44/8510/41425/1hour.html', { waitUntil: 'networkidle2', timeout: 60000 });
     
     const dailyTargets = [
@@ -74,10 +74,8 @@ async function getAllImageBlocks(blockId) {
       await new Promise(r => setTimeout(r, 2000));
       const rect = await element.boundingBox();
       
-      // スクリーンショット撮影
       await page.screenshot({ path: `${target.name}.png`, clip: rect });
       
-      // Cloudinaryへアップロード（高画質設定を維持）
       const res = await cloudinary.uploader.upload(`${target.name}.png`, { 
         public_id: `${target.name}_${ts}`, 
         overwrite: true, 
@@ -108,8 +106,8 @@ async function getAllImageBlocks(blockId) {
       newUrls.push(res.secure_url);
     }
 
-    // --- ステップ3: データベースへの蓄積（検証のため毎回実行） ---
-    console.log(`データベースへレコードを追加します (${jstTime})...`);
+    // --- ステップ3: データベースへの蓄積 ---
+    console.log(`データベースへレコードを追加中...`);
     await notion.pages.create({
       parent: { database_id: DATABASE_ID },
       properties: {
@@ -122,8 +120,31 @@ async function getAllImageBlocks(blockId) {
         "ファイル&メディア": {
           files: [
             {
-              // 名前にはタイムスタンプを含めて重複を避ける
               name: `weather_${ts}.png`,
               type: "external",
-              // 【画質改善】?t=クエリを削除してNotionの過剰圧縮を回避
-              external: { url: newUrls[0]
+              external: { url: newUrls[0] } // ?t=を付けないことでNotionの過剰圧縮を回避
+            }
+          ]
+        }
+      }
+    });
+
+    // --- ステップ4: ダッシュボード更新 ---
+    console.log("既存ダッシュボードを更新中...");
+    const allImageBlocks = await getAllImageBlocks(pageId);
+    for (let i = 0; i < Math.min(allImageBlocks.length, newUrls.length); i++) {
+      await notion.blocks.update({
+        block_id: allImageBlocks[i].id,
+        image: { external: { url: `${newUrls[i]}?t=${ts}` } }
+      });
+    }
+    
+    console.log("すべての工程が正常に完了しました！");
+
+  } catch (error) {
+    console.error("エラーが発生しました:", error);
+    process.exit(1);
+  } finally {
+    if (browser) await browser.close();
+  }
+})();
