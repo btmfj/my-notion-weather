@@ -39,7 +39,7 @@ async function getAllImageBlocks(blockId) {
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     
-    // 【高画質化】解像度を2倍に設定
+    // 高解像度設定
     await page.setViewport({ 
       width: 1400, 
       height: 5000,
@@ -60,7 +60,7 @@ async function getAllImageBlocks(blockId) {
     const newUrls = [];
 
     // --- ステップ1: 今日・明日の予報 ---
-    console.log("高画質でデータを取得中...");
+    console.log("予報データを取得中...");
     await page.goto('https://tenki.jp/forecast/9/44/8510/41425/1hour.html', { waitUntil: 'networkidle2', timeout: 60000 });
     
     const dailyTargets = [
@@ -73,9 +73,7 @@ async function getAllImageBlocks(blockId) {
       const element = await page.$(target.selector);
       await new Promise(r => setTimeout(r, 2000));
       const rect = await element.boundingBox();
-      
       await page.screenshot({ path: `${target.name}.png`, clip: rect });
-      
       const res = await cloudinary.uploader.upload(`${target.name}.png`, { 
         public_id: `${target.name}_${ts}`, 
         overwrite: true, 
@@ -106,13 +104,13 @@ async function getAllImageBlocks(blockId) {
       newUrls.push(res.secure_url);
     }
 
-    // --- ステップ3: データベースへの蓄積 ---
-    console.log(`データベースへレコードを追加中...`);
+    // --- ステップ3: データベースへの蓄積 (本文への挿入) ---
+    console.log(`データベースへ新規ページを作成中...`);
     await notion.pages.create({
       parent: { database_id: DATABASE_ID },
       properties: {
         "タイトル": {
-          title: [{ text: { content: `${jstDate} ${jstTime} の予報` } }]
+          title: [{ text: { content: `${jstDate} ${jstTime} の記録` } }]
         },
         "日付": {
           date: { start: jstDate }
@@ -120,13 +118,34 @@ async function getAllImageBlocks(blockId) {
         "ファイル&メディア": {
           files: [
             {
-              name: `weather_${ts}.png`,
+              name: `thumb_${ts}.png`,
               type: "external",
-              external: { url: newUrls[0] } // ?t=を付けないことでNotionの過剰圧縮を回避
+              external: { url: newUrls[0] }
             }
           ]
         }
-      }
+      },
+      // 【改善】ページの本文（children）に画像ブロックを置く
+      children: [
+        {
+          object: 'block',
+          type: 'heading_2',
+          heading_2: { rich_text: [{ text: { content: "☀️ 今日の天気予報" } }] }
+        },
+        {
+          object: 'block',
+          type: 'image',
+          image: {
+            type: 'external',
+            external: { url: newUrls[0] }
+          }
+        },
+        {
+          object: 'block',
+          type: 'paragraph',
+          paragraph: { rich_text: [{ text: { content: `取得時刻: ${jstTime}` } }] }
+        }
+      ]
     });
 
     // --- ステップ4: ダッシュボード更新 ---
