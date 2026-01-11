@@ -13,7 +13,6 @@ const notion = new Client({ auth: process.env.NOTION_TOKEN });
 const pageId = process.env.NOTION_PAGE_ID;
 const DATABASE_ID = '2e3131d5c28380efb35fca292b17b57f'; 
 
-// ダッシュボード更新用
 async function getAllImageBlocks(blockId) {
   let results = [];
   const response = await notion.blocks.children.list({ block_id: blockId });
@@ -38,27 +37,24 @@ async function getAllImageBlocks(blockId) {
     
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-    
-    // 高解像度（Retina相当）設定
-    await page.setViewport({ 
-      width: 1400, 
-      height: 5000,
-      deviceScaleFactor: 2 
-    });
+    await page.setViewport({ width: 1400, height: 5000, deviceScaleFactor: 2 });
 
     const now = new Date();
     const ts = now.getTime();
     
-    // 日本時間設定
+    // 【重要】日本時間での日付と時間を確実に取得
     const jstDate = new Intl.DateTimeFormat('ja-JP', {
       year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Asia/Tokyo'
     }).format(now).replace(/\//g, '-');
-    
-    const currentHour = now.getHours();
+
+    const jstHour = parseInt(new Intl.DateTimeFormat('ja-JP', {
+      hour: '2-digit', hour12: false, timeZone: 'Asia/Tokyo'
+    }).format(now));
+
     const newUrls = [];
 
     // --- ステップ1: 今日・明日の予報取得 ---
-    console.log("予報データを取得中...");
+    console.log(`[JST ${jstHour}時] 予報データを取得中...`);
     await page.goto('https://tenki.jp/forecast/9/44/8510/41425/1hour.html', { waitUntil: 'networkidle2', timeout: 60000 });
     
     const dailyTargets = [
@@ -73,9 +69,7 @@ async function getAllImageBlocks(blockId) {
       const rect = await element.boundingBox();
       await page.screenshot({ path: `${target.name}.png`, clip: rect });
       const res = await cloudinary.uploader.upload(`${target.name}.png`, { 
-        public_id: `${target.name}_${ts}`, 
-        overwrite: true, 
-        invalidate: true
+        public_id: `${target.name}_${ts}`, overwrite: true, invalidate: true
       });
       newUrls.push(res.secure_url);
     }
@@ -95,25 +89,20 @@ async function getAllImageBlocks(blockId) {
       const rect = await element.boundingBox();
       await page.screenshot({ path: `weather_week.png`, clip: rect });
       const res = await cloudinary.uploader.upload(`weather_week.png`, { 
-        public_id: `weather_week_${ts}`, 
-        overwrite: true, 
-        invalidate: true 
+        public_id: `weather_week_${ts}`, overwrite: true, invalidate: true 
       });
       newUrls.push(res.secure_url);
     }
 
-    // --- ステップ3: データベースへの蓄積 (0時台のみ実行) ---
-    if (currentHour === 0) {
-      console.log("0時台のため、データベースへ記録を作成します...");
+    // --- ステップ3: データベースへの蓄積 (検証用：19時台に実行) ---
+    // ここを 19 に設定して検証します
+    if (jstHour === 19) {
+      console.log("検証：日本時間19時台のため、データベースへ記録を作成します...");
       await notion.pages.create({
         parent: { database_id: DATABASE_ID },
         properties: {
-          "タイトル": {
-            title: [{ text: { content: `${jstDate} の天気記録` } }]
-          },
-          "日付": {
-            date: { start: jstDate }
-          }
+          "タイトル": { title: [{ text: { content: `${jstDate} の天気記録 (検証中)` } }] },
+          "日付": { date: { start: jstDate } }
         },
         children: [
           {
@@ -124,17 +113,14 @@ async function getAllImageBlocks(blockId) {
           {
             object: 'block',
             type: 'image',
-            image: {
-              type: 'external',
-              external: { url: newUrls[0] }
-            }
+            image: { type: 'external', external: { url: newUrls[0] } }
           }
         ]
       });
       console.log("データベースへの保存が完了しました。");
     }
 
-    // --- ステップ4: ダッシュボード（既存ページ）の更新 (常に実行) ---
+    // --- ステップ4: ダッシュボード更新 (常に実行) ---
     console.log("ダッシュボードを更新中...");
     const allImageBlocks = await getAllImageBlocks(pageId);
     for (let i = 0; i < Math.min(allImageBlocks.length, newUrls.length); i++) {
