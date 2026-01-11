@@ -13,6 +13,7 @@ const notion = new Client({ auth: process.env.NOTION_TOKEN });
 const pageId = process.env.NOTION_PAGE_ID;
 const DATABASE_ID = '2e3131d5c28380efb35fca292b17b57f'; 
 
+// ダッシュボード更新用：画像ブロックを再帰的に取得
 async function getAllImageBlocks(blockId) {
   let results = [];
   const response = await notion.blocks.children.list({ block_id: blockId });
@@ -37,12 +38,18 @@ async function getAllImageBlocks(blockId) {
     
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-    await page.setViewport({ width: 1400, height: 5000, deviceScaleFactor: 2 });
+    
+    // 高解像度（Retina相当）設定
+    await page.setViewport({ 
+      width: 1400, 
+      height: 5000,
+      deviceScaleFactor: 2 
+    });
 
     const now = new Date();
     const ts = now.getTime();
     
-    // 【重要】日本時間での日付と時間を確実に取得
+    // 【日本標準時】での日付と時間を取得
     const jstDate = new Intl.DateTimeFormat('ja-JP', {
       year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Asia/Tokyo'
     }).format(now).replace(/\//g, '-');
@@ -69,7 +76,9 @@ async function getAllImageBlocks(blockId) {
       const rect = await element.boundingBox();
       await page.screenshot({ path: `${target.name}.png`, clip: rect });
       const res = await cloudinary.uploader.upload(`${target.name}.png`, { 
-        public_id: `${target.name}_${ts}`, overwrite: true, invalidate: true
+        public_id: `${target.name}_${ts}`, 
+        overwrite: true, 
+        invalidate: true
       });
       newUrls.push(res.secure_url);
     }
@@ -89,20 +98,25 @@ async function getAllImageBlocks(blockId) {
       const rect = await element.boundingBox();
       await page.screenshot({ path: `weather_week.png`, clip: rect });
       const res = await cloudinary.uploader.upload(`weather_week.png`, { 
-        public_id: `weather_week_${ts}`, overwrite: true, invalidate: true 
+        public_id: `weather_week_${ts}`, 
+        overwrite: true, 
+        invalidate: true 
       });
       newUrls.push(res.secure_url);
     }
 
-    // --- ステップ3: データベースへの蓄積 (検証用：19時台に実行) ---
-    // ここを 19 に設定して検証します
-    if (jstHour === 19) {
-      console.log("検証：日本時間19時台のため、データベースへ記録を作成します...");
+    // --- ステップ3: データベースへの蓄積 (本番：0時台のみ実行) ---
+    if (jstHour === 0) {
+      console.log("日本時間0時台のため、データベースへ本日の天気記録を作成します...");
       await notion.pages.create({
         parent: { database_id: DATABASE_ID },
         properties: {
-          "タイトル": { title: [{ text: { content: `${jstDate} の天気記録 (検証中)` } }] },
-          "日付": { date: { start: jstDate } }
+          "タイトル": {
+            title: [{ text: { content: `${jstDate} の天気記録` } }]
+          },
+          "日付": {
+            date: { start: jstDate }
+          }
         },
         children: [
           {
@@ -113,15 +127,18 @@ async function getAllImageBlocks(blockId) {
           {
             object: 'block',
             type: 'image',
-            image: { type: 'external', external: { url: newUrls[0] } }
+            image: {
+              type: 'external',
+              external: { url: newUrls[0] }
+            }
           }
         ]
       });
       console.log("データベースへの保存が完了しました。");
     }
 
-    // --- ステップ4: ダッシュボード更新 (常に実行) ---
-    console.log("ダッシュボードを更新中...");
+    // --- ステップ4: ダッシュボード（既存ページ）の更新 (常に実行) ---
+    console.log("ダッシュボードの画像ブロックを更新中...");
     const allImageBlocks = await getAllImageBlocks(pageId);
     for (let i = 0; i < Math.min(allImageBlocks.length, newUrls.length); i++) {
       await notion.blocks.update({
@@ -130,7 +147,7 @@ async function getAllImageBlocks(blockId) {
       });
     }
     
-    console.log("正常に完了しました！");
+    console.log("すべての工程が正常に完了しました！");
 
   } catch (error) {
     console.error("エラーが発生しました:", error);
