@@ -16,7 +16,7 @@ const notion = new Client({ auth: process.env.NOTION_TOKEN });
 // --- 特定したブロックIDをセット ---
 const BLOCK_ID_TODAY = '2df131d5c2838067982cdd9b17fc2344'; 
 const BLOCK_ID_TOMORROW = '2df131d5c283803db084d8b59909041c'; 
-const BLOCK_ID_WEEK = '2df131d5c28380368646e647279b9e01'; // 10日間天気用
+const BLOCK_ID_WEEK = '2df131d5c28380368646e647279b9e01'; 
 const DATABASE_ID = '2e3131d5c28380efb35fca292b17b57f'; 
 
 (async () => {
@@ -42,7 +42,7 @@ const DATABASE_ID = '2e3131d5c28380efb35fca292b17b57f';
     console.log(`現在の日本時間: ${jstHour}時`);
     const newUrls = [];
 
-    // --- ステップ1: 今日・明日の予報 (1時間予報ページ) ---
+    // --- ステップ1: 今日・明日の予報 ---
     console.log("今日・明日の予報を取得中...");
     await page.goto('https://tenki.jp/forecast/9/44/8510/41425/1hour.html', { waitUntil: 'domcontentloaded' });
     const dailyTargets = [{ s: '#forecast-point-1h-today', n: 'today' }, { s: '#forecast-point-1h-tomorrow', n: 'tomorrow' }];
@@ -55,7 +55,7 @@ const DATABASE_ID = '2e3131d5c28380efb35fca292b17b57f';
       newUrls.push(res.secure_url);
     }
 
-    // --- ステップ2: 10日間予報 (通常予報ページ) ---
+    // --- ステップ2: 10日間予報 ---
     console.log("10日間予報を取得中...");
     await page.goto('https://tenki.jp/forecast/9/44/8510/41425/', { waitUntil: 'domcontentloaded' });
     const weekRect = await page.evaluate(() => {
@@ -82,9 +82,12 @@ const DATABASE_ID = '2e3131d5c28380efb35fca292b17b57f';
 
     for (const task of updateTasks) {
       if (task.url) {
+        // 【修正ポイント】 blocks.update では type: 'external' を含めてはいけない
         await notion.blocks.update({
           block_id: task.id,
-          image: { type: 'external', external: { url: `${task.url}?t=${ts}` } }
+          image: { 
+            external: { url: `${task.url}?t=${ts}` } 
+          }
         });
       }
     }
@@ -92,7 +95,7 @@ const DATABASE_ID = '2e3131d5c28380efb35fca292b17b57f';
 
     // --- ステップ4: データベース蓄積 (0時台のみ) ---
     if (jstHour === 0) {
-      console.log("0時台のため、データベースへの蓄積記録を作成します...");
+      console.log("0時台のため蓄積を行います。");
       await notion.pages.create({
         parent: { database_id: DATABASE_ID },
         properties: {
@@ -101,10 +104,11 @@ const DATABASE_ID = '2e3131d5c28380efb35fca292b17b57f';
         },
         children: [
           { object: 'block', type: 'heading_2', heading_2: { rich_text: [{ text: { content: "☀️ 本日の天気予報" } }] } },
+          // こちら（新規作成）は type: 'external' が必要なのでそのまま
           { object: 'block', type: 'image', image: { type: 'external', external: { url: newUrls[0] } } }
         ]
       });
-      console.log("データベースへの保存完了。");
+      console.log("蓄積完了。");
     }
 
   } catch (error) {
