@@ -2,7 +2,7 @@ const puppeteer = require('puppeteer');
 const cloudinary = require('cloudinary').v2;
 const { Client } = require('@notionhq/client');
 
-// --- 安全装置（10分に延長） ---
+// --- 安全装置（10分経過で強制終了） ---
 setTimeout(() => {
   console.error("10分経過したため、安全のために強制終了します。");
   process.exit(1);
@@ -18,9 +18,25 @@ const notion = new Client({ auth: process.env.NOTION_TOKEN });
 const pageId = process.env.NOTION_PAGE_ID;
 const DATABASE_ID = '2e3131d5c28380efb35fca292b17b57f'; 
 
+// 【修正】ページ内の全階層から画像ブロックを安全に抽出する関数
 async function getAllImageBlocks(blockId) {
-  const response = await notion.blocks.children.list({ block_id: blockId });
-  return response.results.filter(block => block.type === 'image');
+  let results = [];
+  try {
+    const response = await notion.blocks.children.list({ block_id: blockId });
+    for (const block of response.results) {
+      if (block.type === 'image') {
+        results.push(block);
+      } else if (block.has_children) {
+        // 子要素がある場合は1階層だけ深く探す（無限ループ防止のため深くしすぎない）
+        const childResponse = await notion.blocks.children.list({ block_id: block.id });
+        const childImages = childResponse.results.filter(b => b.type === 'image');
+        results = results.concat(childImages);
+      }
+    }
+  } catch (e) {
+    console.error("ブロック取得中にエラーが発生しました:", e.message);
+  }
+  return results;
 }
 
 (async () => {
@@ -37,11 +53,10 @@ async function getAllImageBlocks(blockId) {
 
     const now = new Date();
     const ts = now.getTime();
-    const jstDate = new Intl.DateTimeFormat('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Asia/Tokyo' }).format(now).replace(/\//g, '-');
     const jstHour = parseInt(new Intl.DateTimeFormat('ja-JP', { hour: '2-digit', hour12: false, timeZone: 'Asia/Tokyo' }).format(now));
+    const jstDate = new Intl.DateTimeFormat('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Asia/Tokyo' }).format(now).replace(/\//g, '-');
 
     console.log(`現在の日本時間: ${jstHour}時`);
-
     const newUrls = [];
 
     // --- ステップ1: スクリーンショット撮影 ---
@@ -60,23 +75,27 @@ async function getAllImageBlocks(blockId) {
       await page.screenshot({ path: `${target.name}.png`, clip: rect });
       const res = await cloudinary.uploader.upload(`${target.name}.png`, { public_id: `${target.name}_${ts}`, overwrite: true });
       newUrls.push(res.secure_url);
-      console.log(`${target.name} の画像をCloudinaryに保存しました。`);
+      console.log(`${target.name} の画像を保存しました。`);
     }
 
-    // --- ステップ2: ダッシュボード（既存ページ）の更新【常に実行】 ---
-    console.log("ダッシュボードの画像ブロックを更新します...");
+    // --- ステップ2: ダッシュボード（既存ページ）の更新 ---
+    console.log("ダッシュボードの画像ブロックを探索中...");
     const imageBlocks = await getAllImageBlocks(pageId);
-    console.log(`更新対象の画像ブロック数: ${imageBlocks.length}`);
+    console.log(`発見された画像ブロック数: ${imageBlocks.length}`);
 
-    for (let i = 0; i < Math.min(imageBlocks.length, newUrls.length); i++) {
-      await notion.blocks.update({
-        block_id: imageBlocks[i].id,
-        image: { external: { url: `${newUrls[i]}?t=${ts}` } }
-      });
+    if (imageBlocks.length > 0) {
+      for (let i = 0; i < Math.min(imageBlocks.length, newUrls.length); i++) {
+        await notion.blocks.update({
+          block_id: imageBlocks[i].id,
+          image: { external: { url: `${newUrls[i]}?t=${ts}` } }
+        });
+        console.log(`ブロック ${imageBlocks[i].id} を更新しました。`);
+      }
+    } else {
+      console.warn("⚠️ 画像ブロックが見つかりませんでした。pageId が正しいか、ページ内に画像が直接貼られているか確認してください。");
     }
-    console.log("ダッシュボードの更新が完了しました。");
 
-    // --- ステップ3: データベース蓄積（新規ページ作成）【0時台のみ】 ---
+    // --- ステップ3: 蓄積 (0時台) ---
     if (jstHour === 0) {
       console.log("0時台のため、データベースへ本日の記録を作成します...");
       await notion.pages.create({
@@ -93,14 +112,13 @@ async function getAllImageBlocks(blockId) {
           image: { type: 'external', external: { url: newUrls[0] } }
         }]
       });
-      console.log("データベースへの蓄積が完了しました。");
     }
 
   } catch (error) {
     console.error("エラー詳細:", error);
   } finally {
     if (browser) await browser.close();
-    console.log("全工程が終了しました。");
+    console.log("終了しました。");
     process.exit(0);
   }
 })();
