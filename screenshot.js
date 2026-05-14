@@ -13,11 +13,25 @@ cloudinary.config({
 
 const notion = new Client({ auth: process.env.NOTION_TOKEN });
 
-// --- 特定したブロックIDをセット ---
-const BLOCK_ID_TODAY = '2df131d5c2838067982cdd9b17fc2344'; 
-const BLOCK_ID_TOMORROW = '2df131d5c283803db084d8b59909041c'; 
-const BLOCK_ID_WEEK = '2df131d5c28380368646e647279b9e01'; 
-const DATABASE_ID = '2e3131d5c28380efb35fca292b17b57f'; 
+// --- 更新対象のユーザー設定 ---
+const TARGET_USERS = [
+  {
+    name: "本人",
+    blocks: [
+      '2df131d5c2838067982cdd9b17fc2344', // 今日
+      '2df131d5c283803db084d8b59909041c', // 明日
+      '2df131d5c28380368646e647279b9e01'  // 週間
+    ]
+  },
+  {
+    name: "奥様",
+    blocks: [
+      '360131d5c28380fdb0faefffca5e749d', // 今日
+      '360131d5c28380a5ad55f467f75759fb', // 明日
+      '360131d5c28380d78041ec6493c98782'  // 週間
+    ]
+  }
+];
 
 (async () => {
   let browser;
@@ -33,17 +47,10 @@ const DATABASE_ID = '2e3131d5c28380efb35fca292b17b57f';
     const now = new Date();
     const ts = now.getTime();
     
-    // 日本時間の判定
-    const jstFormatter = new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hour12: false });
-    const parts = jstFormatter.formatToParts(now);
-    const jstDate = `${parts.find(p => p.type === 'year').value}-${parts.find(p => p.type === 'month').value}-${parts.find(p => p.type === 'day').value}`;
-    const jstHour = parseInt(parts.find(p => p.type === 'hour').value);
-
-    console.log(`現在の日本時間: ${jstHour}時`);
+    console.log("天気情報の取得を開始します...");
     const newUrls = [];
 
     // --- ステップ1: 今日・明日の予報 ---
-    console.log("今日・明日の予報を取得中...");
     await page.goto('https://tenki.jp/forecast/9/44/8510/41425/1hour.html', { waitUntil: 'domcontentloaded' });
     const dailyTargets = [{ s: '#forecast-point-1h-today', n: 'today' }, { s: '#forecast-point-1h-tomorrow', n: 'tomorrow' }];
     for (const t of dailyTargets) {
@@ -56,7 +63,6 @@ const DATABASE_ID = '2e3131d5c28380efb35fca292b17b57f';
     }
 
     // --- ステップ2: 10日間予報 ---
-    console.log("10日間予報を取得中...");
     await page.goto('https://tenki.jp/forecast/9/44/8510/41425/', { waitUntil: 'domcontentloaded' });
     const weekRect = await page.evaluate(() => {
       const headers = Array.from(document.querySelectorAll('h3, h2, .section-title'));
@@ -72,44 +78,31 @@ const DATABASE_ID = '2e3131d5c28380efb35fca292b17b57f';
       newUrls.push(res.secure_url);
     }
 
-    // --- ステップ3: Notionダッシュボードの更新 ---
-    console.log("Notionブロックを更新します...");
-    const updateTasks = [
-      { id: BLOCK_ID_TODAY, url: newUrls[0] },
-      { id: BLOCK_ID_TOMORROW, url: newUrls[1] },
-      { id: BLOCK_ID_WEEK, url: newUrls[2] }
-    ];
+    // --- ステップ3: 全ユーザーのNotion更新 ---
+    for (const user of TARGET_USERS) {
+      console.log(`${user.name}様のページを更新中...`);
+      const updateTasks = [
+        { id: user.blocks[0], url: newUrls[0] }, // 今日
+        { id: user.blocks[1], url: newUrls[1] }, // 明日
+        { id: user.blocks[2], url: newUrls[2] }  // 週間
+      ];
 
-    for (const task of updateTasks) {
-      if (task.url) {
-        // 【修正ポイント】 blocks.update では type: 'external' を含めてはいけない
-        await notion.blocks.update({
-          block_id: task.id,
-          image: { 
-            external: { url: `${task.url}?t=${ts}` } 
+      for (const task of updateTasks) {
+        if (task.url && task.id) {
+          try {
+            await notion.blocks.update({
+              block_id: task.id,
+              image: { 
+                external: { url: `${task.url}?t=${ts}` } 
+              }
+            });
+          } catch (e) {
+            console.error(`ブロック更新エラー (${user.name} - ID: ${task.id}):`, e.message);
           }
-        });
+        }
       }
     }
-    console.log("ダッシュボードの全画像ブロックを更新しました。");
-
-    // --- ステップ4: データベース蓄積 (0時台のみ) ---
-    if (jstHour === 0) {
-      console.log("0時台のため蓄積を行います。");
-      await notion.pages.create({
-        parent: { database_id: DATABASE_ID },
-        properties: {
-          "タイトル": { title: [{ text: { content: `${jstDate} の天気記録` } }] },
-          "日付": { date: { start: jstDate } }
-        },
-        children: [
-          { object: 'block', type: 'heading_2', heading_2: { rich_text: [{ text: { content: "☀️ 本日の天気予報" } }] } },
-          // こちら（新規作成）は type: 'external' が必要なのでそのまま
-          { object: 'block', type: 'image', image: { type: 'external', external: { url: newUrls[0] } } }
-        ]
-      });
-      console.log("蓄積完了。");
-    }
+    console.log("全ユーザーのダッシュボード更新が完了しました。");
 
   } catch (error) {
     console.error("実行エラー:", error);
